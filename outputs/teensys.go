@@ -1,8 +1,8 @@
 package outputs
 
 import (
-	"ledsim"
-	"net"
+        "ledsim"
+        "net"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,7 +15,7 @@ type udpOutput struct {
 	outputBuff []byte
 }
 
-const TARGET_PORT = 5151
+const TARGET_PORT = 8888
 const SERVER_PORT = 900
 
 type TeensyNetwork struct {
@@ -36,11 +36,22 @@ func (t *TeensyNetwork) Display(sys *ledsim.System) {
 		t.connsMutex.Lock()
 		defer t.connsMutex.Unlock()
 
-		// put write code here
+		// put write code here	
+		/* t.outputConn.WriteToUDP([]byte("Here"), &net.UDPAddr{
+			IP: net.IPv4(192,168,0,100),
+			Port: 8888,
+		}) */
+
 		t.binConns.Range(func(key, value interface{}) bool {
 			udpConnection := value.(*udpOutput)
-			_, err := t.outputConn.WriteToUDP(udpConnection.outputBuff, udpConnection.outputAddr)
-
+			/* The problem is udpConnection.outputBuff. Not sure why but udp refuses to send it*/
+		        // testArray := make([]byte, 2049)	
+                        // _,  err := t.outputConn.WriteToUDP(testArray, udpConnection.outputAddr)
+                        _,  err := t.outputConn.WriteToUDP(udpConnection.outputBuff, udpConnection.outputAddr)
+                        /* _, err := t.outputConn.WriteToUDP(udpConnection.outputBuff, &net.UDPAddr{
+				IP: net.IPv4(192,168,0,100),
+				Port: 8888,
+                        }) */
 			if err != nil {
 				panic("UDP write error to " + key.(string) + ": " + err.Error())
 			}
@@ -51,18 +62,26 @@ func (t *TeensyNetwork) Display(sys *ledsim.System) {
 
 func NewTeensyNetwork(e *echo.Echo, sys *ledsim.System) *TeensyNetwork {
 	outputConnection, err := net.ListenUDP("udp", &net.UDPAddr{
-		Port: SERVER_PORT,
+		IP: net.IPv4(0,0,0,0),
+		Port: 5050,
 	})
 	if err != nil {
 		panic("Cannot start UDP server: " + err.Error())
 	}
-
 	network := &TeensyNetwork{
 		binConns:   new(sync.Map),
 		connsMutex: new(sync.Mutex),
 		outputConn: outputConnection,
 	}
-
+        go func() {
+            	out := make([]byte, 1600)
+	    	for {
+			_, _, err := outputConnection.ReadFromUDP(out)
+			if err != nil {
+				panic("Failed to read from UDP")
+			}
+		}
+	}()
 	for ip, teensy := range sys.Teensys {
 		pins := make(map[int]int)
 		lenPacket := 0
@@ -80,7 +99,7 @@ func NewTeensyNetwork(e *echo.Echo, sys *ledsim.System) *TeensyNetwork {
 		outputArray := make([]byte, lenPacket*3)
 
 		network.binConns.Store(ip, &udpOutput{
-			outputAddr: &net.UDPAddr{IP: net.IPv4(ipArr[0], ipArr[1], ipArr[2], ipArr[3]), Port: TARGET_PORT},
+			outputAddr: &net.UDPAddr{IP: net.IPv4(192, 168, 0, 100), Port: TARGET_PORT},
 			outputBuff: outputArray})
 	}
 	mapLedToOutputArray(sys, network)

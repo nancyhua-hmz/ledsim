@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -62,7 +63,7 @@ func main() {
 		return c.String(http.StatusOK, "seek success")
 	})
 
-	mirage := outputs.NewMirage(e)
+	mirage := outputs.NewTeensyNetwork(e, sys)
 
 	go func() {
 		log.Fatalln(e.Start(":9000"))
@@ -86,25 +87,27 @@ func main() {
 		// fmt.Println(gold)
 	}
 
-	// f, ferr := os.Create("./cpu.prof")
-	// if ferr != nil {
-	// 	log.Fatal(ferr)
-	// }
-	// pprof.StartCPUProfile(f)
+	f, ferr := os.Create("./cpu.prof")
+	if ferr != nil {
+		log.Fatal(ferr)
+	}
+	pprof.StartCPUProfile(f)
 
-	// go func() {
-	// 	time.Sleep(time.Second * 10)
-	// 	pprof.StopCPUProfile()
-	// 	f.Close()
-	// 	fmt.Println("profile complete")
-	// }()
+	go func() {
+		time.Sleep(time.Second * 10)
+		pprof.StopCPUProfile()
+		f.Close()
+		fmt.Println("profile complete")
+	}()
 
 	var getTimestamp func() (time.Duration, error)
 	if player != nil {
 		getTimestamp = player.GetTimestamp
 	}
 
-	pipeline := []ledsim.Middleware{
+	executor := ledsim.NewExecutor(sys, 30,
+		// ledsim.TimingStats{},
+		// ledsim.StallCheck{},
 		ledsim.NewEffectsRunner(ledsim.NewEffectsManager(
 			[]*ledsim.Keyframe{
 				{
@@ -122,33 +125,11 @@ func main() {
 				// 	Duration: time.Second,
 				// 	Effect:   effects.NewShootingStar(effects.Vector{0, 0, 0}, effects.Vector{1, 1, 1}),
 				// },
-				{
-					Label:    "segment test",
-					Offset:   0,
-					Duration: time.Second * 30,
-					Effect:   effects.NewSegmentShift(time.Second*5, 50, 30, 70, golds[0]),
-				},
-				{
-					Label:    "good snake settings",
-					Offset:   time.Second * 30,
-					Duration: time.Second * 600,
-					Effect: effects.NewAvoidingSnake(&effects.AvoidingSnakeConfig{
-						Duration:        time.Second * 30,
-						Palette:         golds,
-						Speed:           20,
-						RandomizeColors: true,
-						Head:            1,
-						NumSnakes:       45,
-						SnakeLength:     80,
-					}),
-				},
 				// {
-				// 	Label:    "test flood fill",
-				// 	Offset:   time.Second,
-				// 	Duration: time.Second * 2,
-				// 	Effect: effects.NewFloodFill(sys.DebugGetLEDByCoord(0.5, 0.0, 0.5),
-				// 		100, colorful.Color{0, 1, 0}, effects.FadeOutFade, 0.5, 0.9, 50,
-				// 		ease.OutExpo),
+				// 	Label:    "segment test",
+				// 	Offset:   0,
+				// 	Duration: time.Minute * 5,
+				// 	Effect:   effects.NewSegmentShift(time.Minute*5, 100, 30, 70, golds[0]),
 				// },
 				// {
 				// 	Label:    "testing falling beads",
@@ -286,28 +267,7 @@ func main() {
 				// },
 			},
 		), getTimestamp),
-		ledsim.NewOutput(mirage),
-	}
-
-	genRange := func(start, end int) []int {
-		result := make([]int, end-start)
-		for i := start; i < end; i++ {
-			result[i-start] = i
-		}
-		return result
-	}
-
-	udpOutput, err := outputs.NewUDP("192.168.0.1:5050", map[string][]int{
-		"192.168.0.2:8888": genRange(0, 300),
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	pipeline = append(pipeline, ledsim.NewOutput(udpOutput))
-
-	executor := ledsim.NewExecutor(sys, 30, pipeline...) // ledsim.TimingStats{},
-	// ledsim.StallCheck{},
+		ledsim.NewOutput(mirage))
 
 	ctx, cancel := context.WithCancel(context.Background())
 
